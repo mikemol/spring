@@ -7,8 +7,18 @@ import torch
 from torch import Tensor
 from torch import nn
 from torch.nn import functional as F
-from transformers import modeling_bart as bart
-from transformers.modeling_utils import BeamHypotheses, calc_banned_ngram_tokens, calc_banned_bad_words_ids, \
+# ⚑⚑⚑ PORTED 2026-09-19 for transformers 5.17. The 2020 `transformers.modeling_bart` module and the
+#   `modeling_utils` generation helpers are GONE; `spring_amr/bart_compat.py` supplies the 15 symbols
+#   this file consumes, reproducing the 2020 SEMANTICS the checkpoint's weights were fit to.
+#   ⚑⚑ NOT an import rewrite: the modern namesakes differ in signature (BartEncoderLayer takes a
+#     layer_idx; BartLearnedPositionalEmbedding takes two args, not three) and, decisively, in the
+#     CACHE MODEL -- 5.x uses Cache objects where this file's beam search reorders `layer_past` dicts
+#     through `_reorder_buffer` at 33 sites. An imported modern layer would leave that reordering a
+#     silent no-op and emit fluent, well-formed, WRONG graphs.
+#   ⚑ Verified by /tmp/probe-compat-complete.py, which DERIVES the required set from this file rather
+#     than from the list used to write the compat layer.
+from spring_amr import bart_compat as bart
+from spring_amr.bart_compat import BeamHypotheses, calc_banned_ngram_tokens, calc_banned_bad_words_ids, \
     top_k_top_p_filtering
 
 def extract_backreferences(ids, num_embeddings, backpointer_idx):

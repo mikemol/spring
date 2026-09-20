@@ -40,6 +40,67 @@ class AMRBartTokenizer(BartTokenizer):
         inst.init_amr_vocabulary(pred_min=pred_min)
         return inst
 
+    # ⚑⚑⚑ PORTED 2026-09-19 for transformers 5.17, AND THE SURGERY BELOW TARGETS ATTRIBUTES THAT NO
+    #   LONGER EXIST. MEASURED: `BartTokenizer` now resolves to `RobertaTokenizer`; the instance has
+    #   NO `encoder` attribute at all, and `decoder` is a **ByteLevel decoder object**, not an
+    #   id->token map. So the original `self.decoder[i] = ntok` was writing into a byte-level decoder.
+    #   ⚑⚑ AND THE TOKENIZER LOADED WITHOUT ERROR, which is what makes this the dangerous shape: the
+    #     failure would have surfaced later as a WRONG EMBEDDING TABLE, because `utils.py` sizes
+    #     `resize_token_embeddings(len(tokenizer.encoder))` off exactly these structures.
+    #   ⚑ THE REAL SURFACE, measured: `_vocab` is the base 50265-entry dict AND IS MUTABLE;
+    #     `_added_tokens_encoder`/`_added_tokens_decoder` hold additions; `add_tokens()` appends at
+    #     50265+; `get_vocab()` returns a COPY, so writing to it changes nothing.
+    #
+    # ⚑⚑⚑ WHAT THE SURGERY ACTUALLY DOES IS TWO SEPARABLE THINGS, and only the first is hostile to
+    #   the modern API:
+    #     (1) RENAME five special tokens to their `Ġ`-prefixed forms AT THEIR EXISTING IDS. This is
+    #         not an addition -- the ids must not move, because the checkpoint's embedding rows for
+    #         <s>/<pad>/</s>/<mask>/<unk> live at those indices.
+    #     (2) APPEND the AMR predicate/relation/pointer tokens. Ordinary `add_tokens()` work.
+    #   Keeping (1) as an in-place rename over a real dict is why this shim exposes `encoder` and
+    #   `decoder` as genuine maps rather than rewriting the algorithm: A REWRITE THAT RE-DERIVES THE
+    #   IDS WOULD SILENTLY RE-MAP EVERY TOKEN, and nothing downstream would notice.
+
+    @property
+    def encoder(self):
+        """The mutable base token->id map, under the name the 2020 code expects.
+
+        ⚑ Returns `_vocab` ITSELF, not a copy: `init_amr_vocabulary` mutates it in place (deletes a
+          key, re-adds it under a prefixed name, then reindexes). `get_vocab()` would hand back a
+          copy and every mutation would be discarded -- a silent no-op, which is the failure this
+          property exists to prevent.
+        """
+        return self._vocab
+
+    @encoder.setter
+    def encoder(self, value):
+        # ⚑ The surgery REBINDS encoder wholesale at the end (`self.encoder = {...}`), so the setter
+        #   is required; without it that line would raise AttributeError on a read-only property.
+        self._vocab = value
+
+    @property
+    def decoder(self):
+        """An id->token map derived from `_vocab`, replacing the 2020 attribute of the same name.
+
+        ⚑⚑ THE BASE CLASS'S `decoder` IS A ByteLevel DECODER OBJECT -- a different thing that happens
+          to share the name. Shadowing it is deliberate and is why `_byte_decoder` below preserves
+          access to the real one for any base-class method that needs it.
+        ⚑ Built on demand rather than cached, because the surgery mutates `_vocab` between reads and a
+          cached copy would go stale mid-surgery.
+        """
+        return {i: t for t, i in self._vocab.items()}
+
+    @decoder.setter
+    def decoder(self, value):
+        # ⚑ The surgery assigns `self.decoder = {v: k ...}`. Accept it and rebuild `_vocab` as the
+        #   inverse, so the two never diverge into two authorities for one mapping.
+        self._vocab = {t: i for i, t in value.items()}
+
+    @property
+    def _byte_decoder(self):
+        """The base class's real ByteLevel decoder, which the `decoder` property above shadows."""
+        return type(self).__mro__[1].decoder.fget(self)
+
     def init_amr_vocabulary(self, pred_min=5):
         for tok in [self.bos_token, self.eos_token, self.pad_token, '<mask>', '<unk>']:
             ntok = self.INIT + tok

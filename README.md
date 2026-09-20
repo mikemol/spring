@@ -1,3 +1,5 @@
+> **Status of this fork (`aeternum-port` branch):** a complete port of SPRING to transformers 5.x, superseded by the AMRBART pipeline at github.com/mikemol/amr-skills because the two checkpoints share no vocabulary (SPRING 53075 vs AMRBART 53228) and SPRING's checkpoint host was unreachable; nothing downstream imports it. Kept as reference: `spring_amr/bart_compat.py` (the 2020 `transformers.modeling_bart` surface reimplemented for 5.x), the `layer_past` cache-reordering changes in `modeling_bart.py`, `requirements-ported.txt`, `weights-pins.json`, `fetch-weights.py`, and the three `probe-*.py` port tests.
+
 # SPRING
 
 	

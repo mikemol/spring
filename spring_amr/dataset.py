@@ -1,7 +1,7 @@
 import logging
 import random
 import torch
-from cached_property import cached_property
+from functools import cached_property  # ⚑ PORTED 2026-09-19: stdlib since 3.8; see linearization.py
 from torch.utils.data import Dataset
 from spring_amr.IO import read_raw_amr_data
 

@@ -4,7 +4,11 @@ from collections import deque, defaultdict
 import re
 from typing import List, Optional, Dict, Any, Set, TypeVar
 
-from cached_property import cached_property
+# ⚑ PORTED 2026-09-19: the `cached_property` PyPI backport is neither installed nor needed --
+#   `functools.cached_property` has been stdlib since Python 3.8 with the same decorator semantics
+#   (compute once per instance, store the value in the instance __dict__). Installing the abandoned
+#   backport to satisfy a 2020 requirements.txt would carry a dependency the language absorbed.
+from functools import cached_property
 from dataclasses import dataclass
 import networkx as nx
 import penman

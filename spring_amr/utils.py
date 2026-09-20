@@ -9,6 +9,31 @@ from spring_amr.modeling_bart import AMRBartForConditionalGeneration
 from spring_amr.tokenization_bart import AMRBartTokenizer, PENMANBartTokenizer
 
 
+def _set_legacy_config_fields(config, **fields):
+    """Set 2020-era config fields, reporting which are no longer part of the schema.
+
+    ⚑⚑⚑ THIS EXISTS BECAUSE A CONFIG ACCEPTS ANY ATTRIBUTE. `config.output_past = False` on
+      transformers 5.17 succeeds and stores a value the library will never read, so the original code
+      could not distinguish "set a live field" from "wrote into a void". The distinction matters: if
+      SPRING's own model file reads the field, setting it is REQUIRED; if nothing reads it, it is
+      residue. Either way the reader should be told, once, rather than left to grep.
+    ⚑ Prints to stderr rather than raising: these fields being absent is EXPECTED on a modern
+      library, so it is a note, not a failure. A refusal here would block a working parse.
+    """
+    import sys as _sys
+
+    legacy = [k for k in fields if not hasattr(config, k)]
+    for k, v in fields.items():
+        setattr(config, k, v)
+    if legacy:
+        print(
+            "spring_amr.utils: %d config field(s) are not in this transformers' BartConfig schema "
+            "and are set for SPRING's own readers only: %s"
+            % (len(legacy), ", ".join(sorted(legacy))),
+            file=_sys.stderr,
+        )
+
+
 def instantiate_model_and_tokenizer(
         name=None,
         checkpoint=None,
@@ -36,12 +61,34 @@ def instantiate_model_and_tokenizer(
         tokenizer_name = name
 
     config = AutoConfig.from_pretrained(name)
-    config.output_past = False
-    config.no_repeat_ngram_size = 0
-    config.prefix = " "
+    # ⚑⚑⚑ PORTED 2026-09-19. MEASURED against transformers 5.17: `output_past`, `prefix` and
+    #   `no_repeat_ngram_size` are NO LONGER BartConfig fields (`hasattr` is False for all three),
+    #   while `output_attentions`, `dropout` and `attention_dropout` remain.
+    #   ⚑⚑ SETTING AN ABSENT FIELD DOES NOT RAISE -- a config accepts arbitrary attributes -- so the
+    #     original three lines were silently writing values nothing would ever read. THAT IS THE QUIET
+    #     DIRECTION, and it is why these are set through a helper that SAYS which ones landed rather
+    #     than assigned blind.
+    #   ⚑ They are still set, because SPRING's own model file reads
+    #     `config.output_past`/`no_repeat_ngram_size` on some paths; the helper records that they are
+    #     SPRING-owned rather than transformers-owned.
+    _set_legacy_config_fields(config, output_past=False, no_repeat_ngram_size=0, prefix=" ")
     config.output_attentions = True
     config.dropout = dropout
     config.attention_dropout = attention_dropout
+
+    # ⚑⚑ THE 2020 CONFIG ALSO CARRIED THREE ARCHITECTURE FLAGS SPRING'S ENCODER/DECODER READ DIRECTLY
+    #   (`static_position_embeddings`, `normalize_embedding`, `normalize_before`). bart_compat's
+    #   layers read them with getattr defaults, but the ENCODER/DECODER in modeling_bart.py read them
+    #   as plain attributes, so they must exist. Defaults are BART-large's, NOT mbart's.
+    for _f, _default in (
+        ("static_position_embeddings", False),
+        ("normalize_embedding", True),
+        ("normalize_before", False),
+        ("add_final_layer_norm", False),
+        ("extra_pos_embeddings", 2),
+    ):
+        if not hasattr(config, _f):
+            setattr(config, _f, _default)
 
     if penman_linearization:
         tokenizer = PENMANBartTokenizer.from_pretrained(

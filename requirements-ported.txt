@@ -1,0 +1,32 @@
+# The PORTED dependency set — see plan-spring-amr-port.md and bart_compat.py.
+#
+# ⚑⚑⚑ requirements.txt IS KEPT UNEDITED AND IS NOT DEAD: it records what the pinned commit
+#   EXPECTED, which is the only way to tell a deliberate port from drift. A port that overwrites
+#   its own baseline cannot be audited against it.
+#
+# ⚑⚑ transformers: 2.11.0 -> 5.x. The 2020 API is gone; spring_amr/bart_compat.py supplies the 15
+#   symbols transformers.modeling_bart used to export. NOT an import rewrite — the modern layers
+#   use Cache OBJECTS where SPRING's beam search reorders layer_past DICTS at 33 sites, so an
+#   imported modern layer leaves that reordering a silent no-op and emits fluent WRONG graphs.
+#
+# ⚑ cached_property: DROPPED, not pinned. functools.cached_property is stdlib since 3.8; the
+#   backport is abandoned. linearization.py and dataset.py now import from functools.
+#
+# ⚑ wandb / pytorch-ignite / sacrebleu / smatch: TRAINING and SCORING deps. Parsing does not reach
+#   them. Left out deliberately — an unused dep is a supply-chain surface and a disk cost, and this
+#   host is at 92%. Add them back if training is ever the task; say so rather than inferring it.
+# ⚑⚑⚑ CUDA, NOT CPU, AND THE CPU CHOICE WAS NEVER A MEASUREMENT. The first install passed a
+#   cpu-backend flag and nothing here ever asked whether a GPU existed. It does: an RTX 4050 with
+#   6 GiB, measured at 228 MiB used — IDLE THROUGHOUT. The device nodes include the CUDA one, not
+#   just modeset, so this is a usable accelerator rather than a display adapter.
+# ⚑⚑ A 409M-PARAMETER MODEL IS ~0.8 GiB AT HALF PRECISION, so it fits with room for beam search —
+#   the GPU is the right place for this and the host CPU was carrying it for no reason.
+# ⚑ TORCH'S WHEELS BUNDLE THEIR OWN CUDA AND CUDNN. This host has the toolkit and NO system cuDNN,
+#   so the wheel is the supported route and an apt cuDNN would be the wrong fix.
+torch
+transformers
+networkx
+penman>=1.1.0
+regex
+PyYAML>=5.1
+huggingface_hub
