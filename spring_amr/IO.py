@@ -1,32 +1,43 @@
 import glob
-from typing import List, Union, Iterable
+from collections.abc import Iterable
 from pathlib import Path
+
+from penman import Graph
+
 from spring_amr.penman import load as pm_load
 
+
 def read_raw_amr_data(
-        paths: List[Union[str, Path]],
-        use_recategorization=False,
-        dereify=True,
-        remove_wiki=False,
-):
+    paths: Iterable[str | Path] | Path,
+    use_recategorization: bool = False,
+    dereify: bool = True,
+    remove_wiki: bool = False,
+) -> list[Graph]:
     assert paths
 
-    if not isinstance(paths, Iterable):
+    # A lone Path is the only non-iterable input; wrap it as the original did.
+    if isinstance(paths, Path):
         paths = [paths]
 
-    graphs = []
+    graphs: list[Graph] = []
     for path_ in paths:
-        for path in glob.glob(str(path_)):
-            path = Path(path)    
+        for found in glob.glob(str(path_)):
+            path = Path(found)
             graphs.extend(pm_load(path, dereify=dereify, remove_wiki=remove_wiki))
 
     assert graphs
-    
+
     if use_recategorization:
         for g in graphs:
             metadata = g.metadata
-            metadata['snt_orig'] = metadata['snt']
-            tokens = eval(metadata['tokens'])
-            metadata['snt'] = ' '.join([t for t in tokens if not ((t.startswith('-L') or t.startswith('-R')) and t.endswith('-'))])
+            metadata["snt_orig"] = metadata["snt"]
+            tokens = eval(metadata["tokens"])
+            metadata["snt"] = " ".join(
+                [
+                    t
+                    for t in tokens
+                    if not (t.startswith(("-L", "-R")) and t.endswith("-"))
+                ]
+            )
 
     return graphs
